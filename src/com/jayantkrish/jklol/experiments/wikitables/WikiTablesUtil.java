@@ -6,6 +6,8 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.regex.Pattern;
+import java.util.regex.Matcher;
 
 import com.google.common.collect.Lists;
 import com.google.common.collect.Sets;
@@ -69,6 +71,9 @@ public class WikiTablesUtil {
 
   public static WikiTableMentionAnnotation findMentions(WikiTableExample example,
       WikiTable table) {
+    // Find all mentions of column headings and row values in the example.
+    // Returns lists containing match type (heading or row value), mention, start and end indices.
+    // TODO: Implement fuzzy and/or substring match.
     String question = example.getQuestion();
     TokenizedQuestion tokenized = WikiTablesUtil.tokenize(question);
     int[] tokenStartInts = Ints.toArray(tokenized.getTokenStartIndexes());
@@ -82,7 +87,7 @@ public class WikiTablesUtil {
     for (int i = 0; i < headings.length; i++) {
       String heading = headings[i];
       if (heading.length() > 0) {
-        int index = question.indexOf(heading.toLowerCase());
+        int index = fuzzyIndexOf(question, heading.toLowerCase());
       
         while (index != -1) {
           int start = findTokenWithCharIndex(tokenStartInts, index);
@@ -93,7 +98,7 @@ public class WikiTablesUtil {
           tokenStarts.add(start);
           tokenEnds.add(end);
           
-          index = question.indexOf(heading.toLowerCase(), index + 1);
+          index = fuzzyIndexOf(question, heading.toLowerCase(), index + 1);
         }
       }
     }
@@ -103,7 +108,7 @@ public class WikiTablesUtil {
       for (int j = 0; j < rows[i].length; j++) {
         String value = rows[i][j];
         if (value.length() > 0) {
-          int index = question.indexOf(value.toLowerCase());
+          int index = fuzzyIndexOf(question, value.toLowerCase());
         
           while (index != -1) {
             int start = findTokenWithCharIndex(tokenStartInts, index);
@@ -114,13 +119,45 @@ public class WikiTablesUtil {
             tokenStarts.add(start);
             tokenEnds.add(end);
 
-            index = question.indexOf(value.toLowerCase(), index + 1);
+            index = fuzzyIndexOf(question, value.toLowerCase(), index + 1);
           }
         }
       }
     }
     
     return new WikiTableMentionAnnotation(mentions, mentionTypes, tokenStarts, tokenEnds);
+  }
+
+  public static int fuzzyIndexOf(String question, String substring, int startIndex) {
+    int index = question.indexOf(substring, startIndex);
+    if(index == -1) {
+      // Check each token within the query and return the index of the first one that matches.
+      // We consider only full token matches.
+      String[] parts = substring.split(" ");
+      int substringIndex = -1;
+      for(int i = 0; i < parts.length; i++) {
+        String partAlnum = parts[i].replaceAll("[^a-z0-9]", "");
+        Pattern p = Pattern.compile("\\b" + partAlnum + "\\b");
+        Matcher matcher = p.matcher(question);
+        while (matcher.find()) {
+          if (matcher.start() < startIndex) {
+            continue;
+          }
+          substringIndex = matcher.start();
+          break;
+        }
+        if (substringIndex != -1) {
+          break;
+        }
+      }
+      return substringIndex;
+    } else {
+      return index;
+    }
+  }
+
+  public static int fuzzyIndexOf(String question, String substring) {
+    return fuzzyIndexOf(question, substring, 0);
   }
   
   public static int findTokenWithCharIndex(int[] tokenStarts, int charIndex) {
