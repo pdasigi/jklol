@@ -4,6 +4,7 @@ import java.io.File;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
+import java.util.ArrayList;
 import java.util.Map;
 import java.util.Set;
 import java.util.regex.Pattern;
@@ -73,7 +74,6 @@ public class WikiTablesUtil {
       WikiTable table) {
     // Find all mentions of column headings and row values in the example.
     // Returns lists containing match type (heading or row value), mention, start and end indices.
-    // TODO: Implement fuzzy and/or substring match.
     String question = example.getQuestion();
     TokenizedQuestion tokenized = WikiTablesUtil.tokenize(question);
     int[] tokenStartInts = Ints.toArray(tokenized.getTokenStartIndexes());
@@ -87,18 +87,20 @@ public class WikiTablesUtil {
     for (int i = 0; i < headings.length; i++) {
       String heading = headings[i];
       if (heading.length() > 0) {
-        int index = fuzzyIndexOf(question, heading.toLowerCase());
+        List<Integer> matchedIndices = fuzzyIndicesOf(question, heading.toLowerCase());
       
-        while (index != -1) {
-          int start = findTokenWithCharIndex(tokenStartInts, index);
-          int end = findTokenWithCharIndex(tokenEndInts, index + heading.length()) + 1;
+        while (matchedIndices.size() != 0) {
+          int startMatchedIndex = matchedIndices.get(0);
+          int endMatchedIndex = matchedIndices.get(0);
+          int start = findTokenWithCharIndex(tokenStartInts, startMatchedIndex);
+          int end = findTokenWithCharIndex(tokenEndInts, endMatchedIndex) + 1;
           
           mentions.add(heading);
           mentionTypes.add(WikiTableMentionAnnotation.HEADING);
           tokenStarts.add(start);
           tokenEnds.add(end);
           
-          index = fuzzyIndexOf(question, heading.toLowerCase(), index + 1);
+          matchedIndices = fuzzyIndicesOf(question, heading.toLowerCase(), startMatchedIndex + 1);
         }
       }
     }
@@ -108,18 +110,19 @@ public class WikiTablesUtil {
       for (int j = 0; j < rows[i].length; j++) {
         String value = rows[i][j];
         if (value.length() > 0) {
-          int index = fuzzyIndexOf(question, value.toLowerCase());
+          List<Integer> matchedIndices = fuzzyIndicesOf(question, value.toLowerCase());
         
-          while (index != -1) {
-            int start = findTokenWithCharIndex(tokenStartInts, index);
-            int end = findTokenWithCharIndex(tokenEndInts, index + value.length()) + 1;
-
+          while (matchedIndices.size() != 0) {
+            int startMatchedIndex = matchedIndices.get(0);
+            int endMatchedIndex = matchedIndices.get(1);
+            int start = findTokenWithCharIndex(tokenStartInts, startMatchedIndex);
+            int end = findTokenWithCharIndex(tokenEndInts, endMatchedIndex) + 1;
             mentions.add(value);
             mentionTypes.add(WikiTableMentionAnnotation.VALUE);
             tokenStarts.add(start);
             tokenEnds.add(end);
 
-            index = fuzzyIndexOf(question, value.toLowerCase(), index + 1);
+            matchedIndices = fuzzyIndicesOf(question, value.toLowerCase(), startMatchedIndex + 1);
           }
         }
       }
@@ -128,36 +131,52 @@ public class WikiTablesUtil {
     return new WikiTableMentionAnnotation(mentions, mentionTypes, tokenStarts, tokenEnds);
   }
 
-  public static int fuzzyIndexOf(String question, String substring, int startIndex) {
-    int index = question.indexOf(substring, startIndex);
-    if(index == -1) {
-      // Check each token within the query and return the index of the first one that matches.
-      // We consider only full token matches.
+  public static List<Integer> fuzzyIndicesOf(String question, String substring, int startIndex) {
+    // Returns start and end indices of the substring that matches the query or a part of it.
+    List<Integer> indices = new ArrayList<Integer>();
+    // We consider only full token matches.
+    String substringAlnum = substring.replaceAll("[^a-z0-9]", "");
+    if (substringAlnum.length() > 0) {
+      Pattern fullStringPattern = Pattern.compile("\\b" + substringAlnum + "\\b");
+      Matcher fullStringMatcher = fullStringPattern.matcher(question);
+      while (fullStringMatcher.find()) {
+        if (fullStringMatcher.start() < startIndex) {
+          continue;
+        }
+        indices.add(fullStringMatcher.start());
+        indices.add(fullStringMatcher.end());
+      }
+    }
+    if (indices.size() == 0) {
+      // Check each token within the query and return the index in the question of the first one that matches.
       String[] parts = substring.split(" ");
-      int substringIndex = -1;
+      boolean substringMatched = false;
       for(int i = 0; i < parts.length; i++) {
         String partAlnum = parts[i].replaceAll("[^a-z0-9]", "");
-        Pattern p = Pattern.compile("\\b" + partAlnum + "\\b");
-        Matcher matcher = p.matcher(question);
-        while (matcher.find()) {
-          if (matcher.start() < startIndex) {
+        if (partAlnum.length() == 0) {
+          continue;
+        }
+        Pattern substringPattern = Pattern.compile("\\b" + partAlnum + "\\b");
+        Matcher substringMatcher = substringPattern.matcher(question);
+        while (substringMatcher.find()) {
+          if (substringMatcher.start() < startIndex) {
             continue;
           }
-          substringIndex = matcher.start();
+          indices.add(substringMatcher.start());
+          indices.add(substringMatcher.end());
+          substringMatched = true;
           break;
         }
-        if (substringIndex != -1) {
+        if (substringMatched) {
           break;
         }
       }
-      return substringIndex;
-    } else {
-      return index;
     }
+    return indices;
   }
 
-  public static int fuzzyIndexOf(String question, String substring) {
-    return fuzzyIndexOf(question, substring, 0);
+  public static List<Integer> fuzzyIndicesOf(String question, String substring) {
+    return fuzzyIndicesOf(question, substring, 0);
   }
   
   public static int findTokenWithCharIndex(int[] tokenStarts, int charIndex) {
