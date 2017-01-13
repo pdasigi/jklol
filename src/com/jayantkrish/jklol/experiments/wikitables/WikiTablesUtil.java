@@ -133,6 +133,7 @@ public class WikiTablesUtil {
 
   public static List<Integer> fuzzyIndicesOf(String question, String substring, int startIndex) {
     // Returns start and end indices of the substring that matches the query or a part of it.
+    // TODO: Lemma matches
     List<Integer> indices = new ArrayList<Integer>();
     // We consider only full token matches.
     String substringAlnum = substring.replaceAll("[^a-z0-9]", "");
@@ -149,7 +150,7 @@ public class WikiTablesUtil {
     }
     if (indices.size() == 0) {
       // Check each token within the query and return the index in the question of the first one that matches.
-      String[] parts = substring.split(" ");
+      String[] parts = substring.split("[^a-z0-9]");
       boolean substringMatched = false;
       for(int i = 0; i < parts.length; i++) {
         String partAlnum = parts[i].replaceAll("[^a-z0-9]", "");
